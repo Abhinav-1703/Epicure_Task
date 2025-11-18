@@ -28,14 +28,7 @@ The goal is to show a reliable message flow across all three systems using a sma
 - **STM32 Nucleo-F303K8**
 - *(Optional)* On-board LED for testing command execution
 
-> **To include images:**
->
-> 1. Create an `assets` folder in the repository.
-> 2. Add images (e.g. `assets/esp32.jpg`, `assets/f303k8.jpg`).
-> 3. Link them in markdown:
->    ```
->    ![ESP32 DevKit](assets/esp32.jpg)
->    ```
+
 
 ---
 
@@ -63,10 +56,6 @@ pip install "paho-mqtt<2"
 ## How to Run the System
 
 1. **Start an MQTT broker**
-   - Easiest method using Docker:
-     ```bash
-     docker run -it -p 1883:1883 eclipse-mosquitto
-     ```
 2. **Flash the ESP32**
    - Open `espcom.ino`, set WiFi credentials and broker IP, then upload.
    - ESP32 connects to WiFi, then to MQTT, and waits for commands.
@@ -75,7 +64,7 @@ pip install "paho-mqtt<2"
    - Open project in CubeIDE.
    - Make sure `pins.h` matches your UART pins (typically PA2 TX, PA3 RX for Nucleo F303K8).
    - Flash the board.
-
+     
 4. **Run the Python GUI**
    ```bash
    python pubgui.py
@@ -144,7 +133,7 @@ When switching boards (e.g. to STM32F407VET6), update only this file.
   Probably subscribed after ESP already published status. Press the Ping button or restart GUI.
 
 - **If there is no UART response**  
-  Double-check ESP TX → STM RX, ESP RX ← STM TX, and common ground.  
+  Double-check ESP TX2 → STM RX, ESP RX2 ← STM TX, and common ground.  
   Confirm baud rate is the same (115200 recommended).
 
 - **If MQTT shows nothing**  

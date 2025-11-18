@@ -98,6 +98,20 @@ ESP32 and STM32 communicate over UART using a simple framed protocol:
 
 ---
 
+## Demo Screenshots
+
+Below are images showing the Python GUI interface and the serial monitor output for command exchanges:
+
+### 1. Python GUI Interface
+
+![Python GUI showing status, controls, and telemetry log](images/python_gui.png)
+
+### 2. Serial Monitor Output (UART traffic)
+
+![Serial monitor log showing command exchange](images/serial_monitor.png)
+
+---
+
 ## System Flow
 
 1. Python GUI publishes commands on MQTT topic **`epicure/commands`**.

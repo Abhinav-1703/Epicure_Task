@@ -1,273 +1,157 @@
-# Epicure_Task — ESP32 ↔ STM32 Bridge + Python Host Tools
+# Epicure_Task — ESP32 ↔ STM32 Communication + Python Host GUI
 
-**Clean, recovered project** providing a framed UART protocol and full host tooling:
+This project demonstrates a simple communication pipeline between an **ESP32**, an **STM32**, and a **Python host GUI**.  
+The ESP32 acts as a bridge, the STM32 parses commands via a framed UART protocol, and the Python GUI sends commands and displays responses.
 
-- **ESP32**: MQTT ↔ UART bridge (heartbeat + forwarding)  
-- **STM32**: framed UART parser (ACK/pong, LED, motor parsing — motor actuation optional)  
-- **Host**: Python Tkinter GUI + serial test helpers
-
-> This README is written to be drop-in-ready. Follow the **Quick Start** to get running fast.
+This repository contains only the minimal files required to understand and test the flow.
 
 ---
 
-## Table of contents
+## 📦 Repository Layout
 
-1. [Repository layout](#repository-layout)  
-2. [Quick start](#quick-start)  
-3. [Dependencies](#dependencies)  
-4. [Configuration](#configuration)  
-5. [How the framed protocol works](#how-the-framed-protocol-works)  
-6. [STM32 — where to put `pins.h` & notes](#stm32---where-to-put-pinsh--notes)  
-7. [Porting hints (F303K8 → STM32F407VET6)](#porting-hints-f303k8--stm32f407vet6)  
-8. [Common workflows & useful commands](#common-workflows--useful-commands)  
-9. [Troubleshooting (quick wins)](#troubleshooting-quick-wins)  
-10. [Development checklist & recommendations](#development-checklist--recommendations)  
-11. [License](#license)  
+```
+espcom.ino      → ESP32 MQTT ↔ UART bridge
+main.c          → STM32 framed UART parser + basic command handling
+pins.h          → Centralized STM32 pin definitions
+pubgui.py       → Minimal Python GUI / MQTT command sender
+LICENSE         → MIT License
+README.md       → This file
+```
 
 ---
 
-## Repository layout
+## 🔧 Dependencies
 
-```
-project-root/
-├─ pubs.py                  # quick publisher / test script
-├─ stmespcom/               # serial helpers (send_ping.py, read_frame.py)
-├─ espclient/               # Python GUI (espclient/gui.py)
-├─ esp/                     # ESP32 sketch (esp_bridge.ino)
-├─ Core/                    # STM32 CubeIDE project (optional)
-│  ├─ Inc/
-│  │   └─ pins.h
-│  └─ Src/
-│      └─ main.c
-├─ README.md
-├─ requirements.txt
-└─ .gitignore
-```
+### ESP32
+- Arduino + ESP32 Core
+- WiFi + PubSubClient (MQTT)
 
-> Keep `venv/` out of the repo (add to `.gitignore`).
+### STM32
+- STM32CubeIDE (any board; sample uses USART2)
+- HAL UART (interrupt RX)
 
----
-
-## Quick start
-
-### 1) Create & activate a Python virtual env
-
-**Windows PowerShell**
-```powershell
-python -m venv venv
-venv\Scripts\Activate.ps1
-```
-
-**macOS / Linux**
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 2) Install Python deps (we use `paho-mqtt < 2`)
-
-```bash
-pip install "paho-mqtt<2" pyserial
-# or from file:
-# pip install -r requirements.txt
-```
-
-### 3) Run an MQTT broker (local testing)
-
-```bash
-docker run -it -p 1883:1883 eclipse-mosquitto
-```
-
-### 4) Configure & run the GUI
-
-* Edit `espclient/gui.py` top constants:
-
-  ```py
-  BROKER = "localhost"
-  PORT = 1883
-  ```
-* Run:
-
-  ```bash
-  python espclient/gui.py
-  ```
-
-### 5) Test serial/frame with helpers
-
-* Send a framed `ping` using `stmespcom/send_ping.py` (or `pubs.py`):
-
-  ```bash
-  python stmespcom/send_ping.py --port /dev/ttyUSB0 --payload ping
-  ```
-* Inspect frames with `stmespcom/read_frame.py`.
-
-(If you want, I can generate these helper scripts next.)
-
----
-
-## Dependencies
-
-Add to `requirements.txt`:
-
-```
-paho-mqtt<2
-pyserial>=3.5
-```
+### Python (`pubgui.py`)
+- paho-mqtt<2
+- tkinter (usually included)
 
 Install:
 
 ```bash
-pip install -r requirements.txt
+pip install "paho-mqtt<2"
 ```
 
-> `paho-mqtt<2` is recommended for this repo because the GUI was written expecting older paho semantics (connect_async / loop_start behavior).
+---
+
+## 🚀 How to Run
+
+**1) Run MQTT broker (local)**
+
+```bash
+docker run -it -p 1883:1883 eclipse-mosquitto
+```
+Or install Mosquitto locally.
+
+**2) Flash ESP32 (`espcom.ino`)**
+- Set WiFi SSID/PASS
+- Set broker IP
+- Upload to ESP32
+
+**3) Flash STM32**
+- Open CubeIDE
+- Build & flash `main.c`
+- Ensure UART wiring:
+  - ESP TX → STM RX
+  - ESP RX ← STM TX
+  - Common GND
+
+**4) Run Python GUI**
+
+```bash
+python pubgui.py
+```
+Choose LED or motor commands and send them to the ESP → STM.
 
 ---
 
-## How the framed protocol works
+## 📡 Message Format (Framed UART)
 
-**Frame layout**:
+Communication between ESP32 ↔ STM32 uses a compact framed protocol:
 
 ```
-[0xAA][len:1][payload:len bytes][checksum:1]
+[0xAA][LEN][PAYLOAD ASCII][CHECKSUM]
 ```
+- `0xAA` = frame start
+- `LEN` = number of bytes in payload
+- `PAYLOAD` = ASCII text (e.g., `ping`, `led:on`, `motor:100:1`)
+- `CHECKSUM` = sum(payload bytes) & 0xFF
 
-* `payload` is ASCII text (examples: `ping:123`, `ACK:pong:123`, `LED:OK`, `MOTOR:OK`)
-* `checksum` = `sum(payload bytes) & 0xFF`
-* Example Python maker:
+**Example payloads**
 
-```py
-def make_frame(payload: str) -> bytes:
-    p = payload.encode('ascii')
-    ln = len(p)
-    cs = sum(p) & 0xFF
-    return bytes([0xAA, ln]) + p + bytes([cs])
-```
+| Command             | Meaning                    |
+|---------------------|---------------------------|
+| ping                | ESP checks if STM32 is alive |
+| led:on / led:off    | Control onboard LED       |
+| motor:<steps>:<dir> | Example parse-only command|
 
-**Recommended payload patterns**
+**STM32 Responses**
 
-* Heartbeat: `ping:<nonce>` → `ACK:pong:<nonce>`
-* LED commands: `led:on`, `led:off` → `LED:OK` or `LED:ERR`
-* Motor commands: `motor:<steps>:<dir>` → parsing ACK `MOTOR:OK` (actuation optional in firmware)
-
----
-
-## STM32 — where to put `pins.h` & notes
-
-Place `pins.h` at `Core/Inc/pins.h`. Make business logic reference these macros instead of raw pins so porting is one-file change.
-
-Example `pins.h`:
-
-```c
-#ifndef PINS_H
-#define PINS_H
-
-#define UART_HANDLE huart2    // CubeMX-generated UART handle
-#define LED_PORT GPIOB
-#define LED_PIN  GPIO_PIN_3
-
-// Pins for UART TX/RX (adjust for your board)
-#define UART_TX_PORT GPIOA
-#define UART_TX_PIN  GPIO_PIN_2
-#define UART_RX_PORT GPIOA
-#define UART_RX_PIN  GPIO_PIN_3
-
-#endif
-```
-
-**CubeMX tips**
-
-* Keep `MX_USART2_UART_Init`, `MX_GPIO_Init`, and `SystemClock_Config` from CubeMX.
-* If you change the UART peripheral (e.g., to USART1), update `pins.h` and CubeMX settings.
+| Response            | Meaning                    |
+|---------------------|---------------------------|
+| ACK:pong            | Valid reply to ping       |
+| LED:OK / LED:ERR    | LED command status        |
+| MOTOR:OK            | Parsed motor command      |
+| UNKNOWN             | Invalid command           |
 
 ---
 
-## Porting hints: F303K8 → STM32F407VET6
+## 🔄 System Flow Overview
 
-1. Open `.ioc` in CubeIDE and change the MCU to `STM32F407VET6`.
-2. Reconfigure clock (F407 commonly uses HSE+PLL).
-3. Reassign UART pins (USART2 often PA2/PA3).
-4. Regenerate code, merge `pins.h` and your logic files.
-5. Re-check timers and DMA mapping (APB clocks and AF mappings differ).
+1) **Python → MQTT**  
+    The GUI publishes commands to the MQTT topic `epicure/commands`.
 
-**Pitfalls to check**
+2) **ESP32 → STM32**  
+    ESP32 receives MQTT commands → wraps them in a UART frame → sends to STM32.
 
-* Timer prescalers & clock tree differences
-* Alternate function mappings for USART/TIM/DMA
-* Peripheral availability & package pins on F407 (VET6 package has many pins)
+3) **STM32 → ESP32**  
+    STM32 parses the frame, validates it, executes the command, and returns a framed response.
 
----
+4) **ESP32 → MQTT**  
+    ESP32 publishes STM32’s responses back to `epicure/status`.
 
-## Common workflows & useful commands
-
-* Create venv & install:
-
-  ```bash
-  python3 -m venv venv
-  source venv/bin/activate
-  pip install "paho-mqtt<2" pyserial
-  ```
-* Start Mosquitto (Docker):
-
-  ```bash
-  docker run -it -p 1883:1883 eclipse-mosquitto
-  ```
-* Commit & push:
-
-  ```bash
-  git add .
-  git commit -m "Initial commit"
-  git push origin main
-  ```
+5) **Python GUI**  
+    The GUI shows acknowledgements such as:
+    - STM:ONLINE
+    - ACK:pong
+    - LED:OK
+    - MOTOR:OK
 
 ---
 
-## Troubleshooting — quick wins
+## 🗂 Pin Configuration (STM32)
 
-### GUI shows `STM: UNKNOWN`
+Pins are centralized in:
 
-* Likely the GUI subscribed **after** ESP published `STM:ONLINE` (non-retained). Fixes:
+`pins.h`
 
-  * Press GUI **Ping** (sends `ping`) to force a reply.
-  * Add an automatic `ping` on GUI connect (implemented in `gui.py` recommended).
-  * Best: make ESP publish `STM:ONLINE` with `retained=true` and set a retained LWT `STM:OFFLINE`.
-
-### GUI shows `STM:ONLINE` incorrectly (false positive)
-
-* Use pending-expectation logic: only mark STM online when the reply matches expected tokens (e.g., `ACK:pong`, `LED:OK`, `MOTOR:OK`).
-
-### Checksum/frame mismatches
-
-* Ensure **no** `\r\n` or trailing whitespace in payload (these change checksum).
-* Use `read_frame.py` to dump raw bytes and confirm `[0xAA,len,payload,cs]`.
-
-### UART wiring & baud
-
-* Wiring: ESP TX → STM RX, ESP RX ← STM TX, common GND.
-* Baud: ensure both sides use the same speed (115200 recommended).
+Modify this file when changing boards (e.g., from Nucleo F303K8 → STM32F407VET6).  
+No changes needed in `main.c`.
 
 ---
 
-## Development checklist & recommendations
+## 📜 License
 
-Short-term
-
-* [ ] Centralize pin macros in `Core/Inc/pins.h`.
-* [ ] Make ESP publish `STM:ONLINE` retained; set LWT `STM:OFFLINE`.
-* [ ] Keep GUI pending-response logic for all commands.
-* [ ] Add `stmespcom/send_ping.py` and `stmespcom/read_frame.py`.
-
-Long-term
-
-* [ ] Add unit tests for Python logic (mock MQTT).
-* [ ] Add CI (GitHub Actions) for tests and linting.
-* [ ] Add TLS for MQTT in production deployments.
-* [ ] Add wiring diagram and screenshots to `docs/`.
+This project is released under the MIT License.
 
 ---
 
-## License
+## ✔ Purpose of This Repository
 
-This project is recommended to use the **MIT License**. Add a `LICENSE` file with the standard MIT text and your name/year.
+This project demonstrates:
 
----
+- A clean framed UART protocol
+- Heartbeat-based STM32 detection
+- Reliable ESP32–STM32 communication
+- A simple Python MQTT GUI
+- Minimal, portable STM32 command parsing
+
+It is intentionally lightweight to allow easy testing and porting.

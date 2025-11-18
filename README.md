@@ -26,7 +26,6 @@ The goal is to show a reliable message flow across all three systems using a sma
 
 - **ESP32-WROOM DevKit**
 - **STM32 Nucleo-F303K8**
-- *(Optional)* On-board LED for testing command execution
 
 
 
@@ -59,9 +58,11 @@ pip install "paho-mqtt<2"
 2. **Flash the ESP32**
    - Open `espcom.ino`, set WiFi credentials and broker IP, then upload.
    - ESP32 connects to WiFi, then to MQTT, and waits for commands.
+   - Use RX2 TX2 !
 
 3. **Flash the STM32**
    - Open project in CubeIDE.
+   - usart2 with PA2 and PA3 as TX RX
    - Make sure `pins.h` matches your UART pins (typically PA2 TX, PA3 RX for Nucleo F303K8).
    - Flash the board.
      

@@ -110,6 +110,11 @@ Below are images showing the Python GUI interface and the serial monitor output 
 
 ![Serial monitor log showing command exchange](images/serial_monitor.png)
 
+### 3. Hardware Setup
+
+![Serial monitor log showing command exchange](images/hardware.jpg)
+
+
 ---
 
 ## System Flow

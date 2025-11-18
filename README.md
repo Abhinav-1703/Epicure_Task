@@ -1,157 +1,163 @@
-# Epicure_Task — ESP32 ↔ STM32 Communication + Python Host GUI
+## Epicure_Task – ESP32 ↔ STM32 ↔ Python GUI Communication Demo
 
-This project demonstrates a simple communication pipeline between an **ESP32**, an **STM32**, and a **Python host GUI**.  
-The ESP32 acts as a bridge, the STM32 parses commands via a framed UART protocol, and the Python GUI sends commands and displays responses.
+This project demonstrates a minimal communication pipeline between:
 
-This repository contains only the minimal files required to understand and test the flow.
+* ESP32-WROOM (MQTT to UART bridge)
+* STM32 Nucleo-F303K8 (framed UART command parser)
+* Python host GUI (simple MQTT command sender and response viewer)
 
----
-
-## 📦 Repository Layout
-
-```
-espcom.ino      → ESP32 MQTT ↔ UART bridge
-main.c          → STM32 framed UART parser + basic command handling
-pins.h          → Centralized STM32 pin definitions
-pubgui.py       → Minimal Python GUI / MQTT command sender
-LICENSE         → MIT License
-README.md       → This file
-```
+The goal is to show a reliable message flow across all three systems using a small readable codebase.
 
 ---
 
-## 🔧 Dependencies
+## Repository Contents
 
-### ESP32
-- Arduino + ESP32 Core
-- WiFi + PubSubClient (MQTT)
+espcom.ino      – ESP32 firmware (MQTT bridge + heartbeat + UART framing)
+main.c          – STM32 firmware (parsing framed UART messages and returning acknowledgements)
+pins.h          – STM32 pin configuration (one place to change when using a different board)
+pubgui.py       – Python script with a small GUI for sending commands through MQTT
+LICENSE         – MIT License
+README.md       – This file
 
-### STM32
-- STM32CubeIDE (any board; sample uses USART2)
-- HAL UART (interrupt RX)
+---
 
-### Python (`pubgui.py`)
-- paho-mqtt<2
-- tkinter (usually included)
+## Hardware Used
 
-Install:
+ESP32-WROOM DevKit
+STM32 Nucleo-F303K8
+(Optional) On-board LED for testing command execution
 
-```bash
+If you want to include images in this README:
+
+* Create an 'assets' folder in the repository
+* Add your images there (example: assets/esp32.jpg, assets/f303k8.jpg)
+* Then link them using:  ![Description](assets/filename.jpg)
+
+---
+
+## Dependencies
+
+ESP32:
+WiFi library
+PubSubClient (MQTT)
+
+STM32:
+STM32CubeIDE
+HAL UART with interrupt mode enabled
+
+Python:
+paho-mqtt < 2
+tkinter (usually included)
+
+Install Python requirements:
 pip install "paho-mqtt<2"
-```
 
 ---
 
-## 🚀 How to Run
+## How to Run the System
 
-**1) Run MQTT broker (local)**
+1. Start an MQTT broker
+   Easiest method using Docker:
+   docker run -it -p 1883:1883 eclipse-mosquitto
 
-```bash
-docker run -it -p 1883:1883 eclipse-mosquitto
-```
-Or install Mosquitto locally.
+2. Flash the ESP32
+   Open espcom.ino, set WiFi credentials and broker IP, then upload.
+   ESP32 connects to WiFi, then to MQTT, and waits for commands.
 
-**2) Flash ESP32 (`espcom.ino`)**
-- Set WiFi SSID/PASS
-- Set broker IP
-- Upload to ESP32
+3. Flash the STM32
+   Open the project in CubeIDE.
+   Make sure pins.h matches your UART pins (typically PA2 TX, PA3 RX for Nucleo F303K8).
+   Flash the board.
 
-**3) Flash STM32**
-- Open CubeIDE
-- Build & flash `main.c`
-- Ensure UART wiring:
-  - ESP TX → STM RX
-  - ESP RX ← STM TX
-  - Common GND
-
-**4) Run Python GUI**
-
-```bash
-python pubgui.py
-```
-Choose LED or motor commands and send them to the ESP → STM.
+4. Run the Python GUI
+   python pubgui.py
+   This will let you send LED and other test commands from your PC.
 
 ---
 
-## 📡 Message Format (Framed UART)
+## Message Format
 
-Communication between ESP32 ↔ STM32 uses a compact framed protocol:
+The ESP32 and STM32 communicate over UART using a simple framed protocol:
 
 ```
-[0xAA][LEN][PAYLOAD ASCII][CHECKSUM]
+[0xAA][LEN][ASCII_PAYLOAD][CHECKSUM]
 ```
-- `0xAA` = frame start
-- `LEN` = number of bytes in payload
-- `PAYLOAD` = ASCII text (e.g., `ping`, `led:on`, `motor:100:1`)
-- `CHECKSUM` = sum(payload bytes) & 0xFF
 
-**Example payloads**
+0xAA       – Start of frame
+LEN        – Payload length in bytes
+PAYLOAD    – ASCII text such as:
+ping
+led:on
+led:off
+motor:120:1
+CHECKSUM   – Sum of payload bytes (modulo 256)
 
-| Command             | Meaning                    |
-|---------------------|---------------------------|
-| ping                | ESP checks if STM32 is alive |
-| led:on / led:off    | Control onboard LED       |
-| motor:<steps>:<dir> | Example parse-only command|
+Examples:
 
-**STM32 Responses**
+python → MQTT → ESP
+led:on
 
-| Response            | Meaning                    |
-|---------------------|---------------------------|
-| ACK:pong            | Valid reply to ping       |
-| LED:OK / LED:ERR    | LED command status        |
-| MOTOR:OK            | Parsed motor command      |
-| UNKNOWN             | Invalid command           |
+ESP → STM32 (UART frame)
+0xAA 05 6C65643A6F6E CS
 
----
+STM32 → ESP (response)
+ACK:pong
+LED:OK
+MOTOR:OK
+UNKNOWN
 
-## 🔄 System Flow Overview
-
-1) **Python → MQTT**  
-    The GUI publishes commands to the MQTT topic `epicure/commands`.
-
-2) **ESP32 → STM32**  
-    ESP32 receives MQTT commands → wraps them in a UART frame → sends to STM32.
-
-3) **STM32 → ESP32**  
-    STM32 parses the frame, validates it, executes the command, and returns a framed response.
-
-4) **ESP32 → MQTT**  
-    ESP32 publishes STM32’s responses back to `epicure/status`.
-
-5) **Python GUI**  
-    The GUI shows acknowledgements such as:
-    - STM:ONLINE
-    - ACK:pong
-    - LED:OK
-    - MOTOR:OK
+ESP → MQTT → Python
+epicure/status : "LED:OK"
 
 ---
 
-## 🗂 Pin Configuration (STM32)
+## System Flow
 
-Pins are centralized in:
-
-`pins.h`
-
-Modify this file when changing boards (e.g., from Nucleo F303K8 → STM32F407VET6).  
-No changes needed in `main.c`.
+Python GUI publishes commands on MQTT topic "epicure/commands".
+ESP32 receives the MQTT command, checks it, wraps it in a UART frame, and sends it to the STM32.
+STM32 parses the frame, executes or interprets the command, and returns a framed response.
+ESP32 publishes this response to the topic "epicure/status".
+The Python GUI displays the status and parsed acknowledgement.
 
 ---
 
-## 📜 License
+## STM32 Pin Configuration (pins.h)
+
+All pin and peripheral configuration is centralized here so the code can be ported easily.
+
+Example:
+
+#define UART_HANDLE huart2
+#define LED_PORT GPIOB
+#define LED_PIN  GPIO_PIN_3
+
+#define UART_TX_PORT GPIOA
+#define UART_TX_PIN  GPIO_PIN_2
+#define UART_RX_PORT GPIOA
+#define UART_RX_PIN  GPIO_PIN_3
+
+When switching boards (for example to STM32F407VET6), update only this file.
+
+---
+
+## Troubleshooting Notes
+
+If the GUI shows STM:UNKNOWN
+Probably subscribed after the ESP already published status.
+Press the Ping button or restart the GUI.
+
+If there is no UART response
+Check ESP TX → STM RX, ESP RX ← STM TX, and a common ground.
+Verify both sides use the same baud rate (115200 recommended).
+
+If MQTT shows nothing
+Ensure ESP32 is connected to the same network as the broker.
+Use:   mosquitto_sub -t "#"   to observe traffic.
+
+---
+
+## License
 
 This project is released under the MIT License.
 
 ---
-
-## ✔ Purpose of This Repository
-
-This project demonstrates:
-
-- A clean framed UART protocol
-- Heartbeat-based STM32 detection
-- Reliable ESP32–STM32 communication
-- A simple Python MQTT GUI
-- Minimal, portable STM32 command parsing
-
-It is intentionally lightweight to allow easy testing and porting.
